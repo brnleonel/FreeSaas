@@ -1,0 +1,61 @@
+name: freesaas
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: postgres_container
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1
+    ports:
+      - "6432:5432"
+    expose:
+      - 6432
+    volumes:
+      - freesaas:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: redis_container
+    ports:
+      - "7379:6379"
+    expose:
+      - 7379
+    volumes:
+      - freesaas:/data
+  
+  application:
+    container_name: freesaas_container
+    build:
+      dockerfile_inline: |
+        FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+        USER app
+        WORKDIR /app
+        EXPOSE 8080
+
+        FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+        ARG BUILD_CONFIGURATION=Release
+        WORKDIR /src
+        COPY ["/FreeSaas.Api/FreeSaas.Api.csproj", "FreeSaas.Api/"]
+        RUN dotnet restore "./FreeSaas.Api/FreeSaas.Api.csproj"
+        COPY . .
+        WORKDIR "/src/FreeSaas.Api"
+        RUN dotnet build "./FreeSaas.Api.csproj" -c %BUILD_CONFIGURATION% -o /app/build
+
+        FROM build AS publish
+        ARG BUILD_CONFIGURATION=Release
+        RUN dotnet publish "./FreeSaas.Api.csproj" -c %BUILD_CONFIGURATION% -o /app/publish /p:UseAppHost=false
+
+        FROM base AS final
+        WORKDIR /app
+        COPY --from=publish /app/publish .
+        ENTRYPOINT ["dotnet", "FreeSaas.Api.dll"]
+    ports:
+      - "8080:8080"
+    expose:
+      - 8080
+    depends_on:
+      - postgres
+      - redis
+volumes:
+  freesaas:
